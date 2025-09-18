@@ -14,13 +14,13 @@ _An opinionated collection of container images_
 
 </div>
 
-Welcome to our container images! If you are looking for a container, start by [browsing the GitHub Packages page for this repository's packages](https://github.com/orgs/bykaj/packages?repo_name=containers).
+Welcome to my container images! If you are looking for a container, start by [browsing the GitHub Packages page for this repository's packages](https://github.com/bykaj?tab=packages&repo_name=containers).
 
 ## Mission Statement
 
-Our goal is to provide [semantically versioned](https://semver.org/), [rootless](https://rootlesscontaine.rs/), and [multi-architecture](https://www.docker.com/blog/multi-arch-build-and-images-the-simple-way/) containers for various applications.
+My goal is to provide [semantically versioned](https://semver.org/), [rootless](https://rootlesscontaine.rs/), and [multi-architecture](https://www.docker.com/blog/multi-arch-build-and-images-the-simple-way/) containers for various applications.
 
-We adhere to the [KISS principle](https://en.wikipedia.org/wiki/KISS_principle), logging to stdout, maintaining [one process per container](https://testdriven.io/tips/59de3279-4a2d-4556-9cd0-b444249ed31e/), avoiding tools like [s6-overlay](https://github.com/just-containers/s6-overlay), and building all images on top of [Alpine](https://hub.docker.com/_/alpine) or [Ubuntu](https://hub.docker.com/_/ubuntu).
+I adhere to the [KISS principle](https://en.wikipedia.org/wiki/KISS_principle), logging to stdout, maintaining [one process per container](https://testdriven.io/tips/59de3279-4a2d-4556-9cd0-b444249ed31e/), avoiding tools like [s6-overlay](https://github.com/just-containers/s6-overlay), and building all images on top of [Alpine](https://hub.docker.com/_/alpine) or [Ubuntu](https://hub.docker.com/_/ubuntu).
 
 ## Features
 
@@ -30,10 +30,10 @@ Containers built here do not use immutable tags in the traditional sense, as see
 
 | Container | Immutable |
 |-----------------------|----|
-| `ghcr.io/bykaj/home-assistant:rolling` | ❌ |
-| `ghcr.io/bykaj/home-assistant:2025.5.1` | ❌ |
-| `ghcr.io/bykaj/home-assistant:rolling@sha256:8053...` | ✅ |
-| `ghcr.io/bykaj/home-assistant:2025.5.1@sha256:8053...` | ✅ |
+| `ghcr.io/bykaj/getmail:rolling` | ❌ |
+| `ghcr.io/bykaj/getmail:6.19.10` | ❌ |
+| `ghcr.io/bykaj/getmail:rolling@sha256:8053...` | ✅ |
+| `ghcr.io/bykaj/getmail:6.19.10@sha256:8053...` | ✅ |
 
 _If pinning an image to the `sha256` digest, tools like [Renovate](https://github.com/renovatebot/renovate) can update containers based on digest or version changes._
 
@@ -103,9 +103,9 @@ args:
   - "8080"
 ```
 
-### Configuration Volume
+### Persistent data
 
-For applications requiring persistent configuration data, the configuration volume is hardcoded to `/config` within the container. In most cases, this path cannot be changed.
+For applications that need to have persistent data the container will leverage a `/data` and/or a `/config` volume where these are necessary. These locations are hardcoded and not able to be changed in most cases.
 
 ### Verify Image Signature
 
@@ -126,18 +126,9 @@ cosign verify-attestation --new-bundle-format --type slsaprovenance1 \
     ghcr.io/bykaj/${APP}:${TAG}
 ```
 
-### Eschewed Features
-
-This repository does not support multiple "channels" for the same application. For example:
-
-- **Prowlarr**, **Radarr**, **Lidarr**, and **Sonarr** only publish the **develop** branch, not the **master** (stable) branch.
-- **qBittorrent** is only published with **LibTorrent 2.x**.
-
-This approach ensures consistency and focuses on streamlined builds.
-
 ## Contributing
 
-We encourage the use of official upstream container images whenever possible. However, contributing to this repository might make sense if:
+I encourage the use of official upstream container images whenever possible. However, contributing to this repository might make sense if:
 
 - The upstream application is **actively maintained**.
 - **And** one of the following applies:
