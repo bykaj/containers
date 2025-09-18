@@ -122,7 +122,7 @@ or by using [cosign](https://github.com/sigstore/cosign):
 ```sh
 cosign verify-attestation --new-bundle-format --type slsaprovenance1 \
     --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
-    --certificate-identity-regexp "^https://github.com/bykaj/containers/.github/workflows/app-builder.yaml@refs/heads/main" \
+    --certificate-identity-regexp "^https://github.com/bykaj/containers/blob/main/.github/workflows/app-builder.yaml" \
     ghcr.io/bykaj/${APP}:${TAG}
 ```
 
@@ -151,7 +151,7 @@ Containers in this repository may be deprecated for the following reasons:
 Forking this repository is straightforward. Keep the following in mind:
 
 1. **Renovate Bot**: Set up a GitHub Bot for Renovate by following the instructions [here](https://github.com/renovatebot/github-action).
-2. **Renovate Configuration**: Configuration files are located in the [`.github`](https://github.com/bykaj/.github) and [renovate-config](https://github.com/bykaj/renovate-config) repositories.
+2. **Renovate Configuration**: Configuration files are located in the [`.github`](https://github.com/bykaj/containers/tree/main/.github) and [renovate-config](https://github.com/bykaj/renovate-config) repositories.
 3. **Lowercase Naming**: Ensure your GitHub username/organization and repository names are entirely lowercase to comply with GHCR requirements. Rename them or update workflows as needed.
 
 ## Credits
