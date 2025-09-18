@@ -1,0 +1,59 @@
+{
+  $schema: "https://docs.renovatebot.com/renovate-schema.json",
+  extends: [
+    "github>bykaj/renovate-config",
+    "github>bykaj/renovate-config:automerge-docker-digest",
+  ],
+  customManagers: [
+    {
+      customType: "regex",
+      description: "Process Annotations in Docker Bake",
+      managerFilePatterns: ["/(^|/)docker-bake\\.hcl$/"],
+      matchStrings: [
+        'datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)( versioning=(?<versioning>\\S+))?\\n.+ = "(?<currentValue>[^"]+)"',
+      ],
+      datasourceTemplate: "{{#if datasource}}{{{datasource}}}{{else}}github-releases{{/if}}",
+      versioningTemplate: "{{#if versioning}}{{{versioning}}}{{else}}semver{{/if}}",
+    },
+  ],
+  packageRules: [
+    {
+      description: ["Release Rules for Application Updates"],
+      additionalBranchPrefix: "{{parentDir}}-",
+      commitMessageExtra: "( {{currentVersion}} → {{newVersion}} )",
+      commitMessageTopic: "{{depName}}",
+      matchFileNames: ["**/docker-bake.hcl", "**/Dockerfile"],
+      semanticCommitScope: "{{parentDir}}",
+      semanticCommitType: "release",
+    },
+    {
+      description: ["Auto-merge Application Updates"],
+      matchFileNames: ["**/docker-bake.hcl"],
+      automerge: true,
+      automergeType: "pr",
+      ignoreTests: false,
+    },
+    {
+      description: ["Allowed Alpine Version for Base Images"],
+      matchDatasources: ["docker"],
+      matchFileNames: ["**/Dockerfile"],
+      matchPackageNames: ["/alpine/"],
+      allowedVersions: "/3\\.22/",
+    },
+    {
+      description: ["Allowed Python Version for Base Images"],
+      matchDatasources: ["docker"],
+      matchFileNames: ["**/Dockerfile"],
+      matchPackageNames: ["/python/"],
+      allowedVersions: "/3\\.13-alpine3\\.22/",
+    },
+    {
+      description: "Auto merge minors and patches for mise packages",
+      matchManagers: ["mise"],
+      automerge: true,
+      automergeType: "pr",
+      matchUpdateTypes: ["minor", "patch"],
+      ignoreTests: false,
+    },
+  ],
+}
