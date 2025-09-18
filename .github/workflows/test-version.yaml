@@ -23,17 +23,15 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Get App Versions
+      - name: Get Application Versions
         uses: ./.github/actions/app-versions
         id: app-versions
         with:
           upstream-version: ${{ inputs.version }}
 
       - name: Check Version Results
-        env:
-          INPUT_VERSION: ${{ inputs.version }}
-        run: |-
-          echo "Input Version: ${INPUT_VERSION}"
+        run: |
+          echo "Input Version: ${{ inputs.version }}"
           echo "Is Valid Semver: ${{ steps.app-versions.outputs.is-valid-semver }}"
           echo "Semantic Version: ${{ steps.app-versions.outputs.semantic }}"
           echo "Raw Version: ${{ steps.app-versions.outputs.raw }}"

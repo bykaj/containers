@@ -1,43 +1,41 @@
 ---
 # yaml-language-server: $schema=https://json.schemastore.org/github-action.json
-name: App Exists
-description: Return true or false if the app exists in the container registry
+name: Application Exists
+description: Return true or false if the application exists in the container registry
 
 inputs:
   app:
-    description: App Name
+    description: Application Name
     required: true
 
 outputs:
   exists:
-    description: App Exists
-    value: ${{ steps.app.outputs.exists }}
+    description: Application Exists
+    value: ${{ steps.application.outputs.exists }}
 
 runs:
   using: composite
   steps:
-    - name: App Exists
+    - name: Application Exists
+      id: application
       uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
-      id: app
-      env:
-        APP: ${{ inputs.app }}
       with:
-        script: |-
-          const app = process.env.APP;
+        script: |
+          const applicationName = '${{ inputs.app }}';
 
           const { data: user } = await github.rest.users.getByUsername({
               username: context.repo.owner,
           });
 
-          let pkg;
+          let container;
           if (user.type === 'Organization') {
               try {
                   const { data } = await github.rest.packages.getPackageForOrganization({
                       package_type: 'container',
-                      package_name: app,
+                      package_name: applicationName,
                       org: context.repo.owner,
                   });
-                  pkg = data;
+                  container = data;
               } catch (error) {
                   if (error.status !== 404) {
                       throw error;
@@ -47,10 +45,10 @@ runs:
               try {
                   const { data } = await github.rest.packages.getPackageForUser({
                       package_type: 'container',
-                      package_name: app,
+                      package_name: applicationName,
                       username: context.repo.owner,
                   });
-                  pkg = data;
+                  container = data;
               } catch (error) {
                   if (error.status !== 404) {
                       throw error;
@@ -58,4 +56,4 @@ runs:
               }
           }
 
-          core.setOutput('exists', typeof pkg !== "undefined");
+          core.setOutput('exists', typeof container !== "undefined");
