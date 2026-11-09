@@ -134,17 +134,16 @@ jobs:
             *.labels.org.opencontainers.image.vendor=${{ github.repository_owner }}
             ${{ inputs.release && format('*.output=type=image,name=ghcr.io/{0}/{1},push-by-digest=true,name-canonical=true,push=true', github.repository_owner, inputs.app) || '*.output=type=docker' }}
             *.platform=${{ matrix.platform }}
-            *.tags=
-          source: .
+            *.tags=${{ ! inputs.release && format('ghcr.io/{0}/{1}:sandbox', github.repository_owner, inputs.app) || '' }}
+          source: ./apps/${{ inputs.app }}
           targets: image
-          workdir: ./apps/${{ inputs.app }}
 
       - if: ${{ ! inputs.release }}
         name: Run Application Tests
         uses: ./.github/actions/app-tests
         with:
           app: ${{ inputs.app }}
-          image: ${{ fromJSON(steps.bake.outputs.metadata).image['containerimage.config.digest'] }}
+          image: ghcr.io/${{ github.repository_owner }}/${{ inputs.app }}:sandbox
           token: ${{ github.token }}
 
       - if: ${{ inputs.release }}
