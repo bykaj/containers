@@ -54,11 +54,13 @@ jobs:
     name: Claude Review
     runs-on: ubuntu-26.04
     timeout-minutes: 20
-    # Job-level, so skipped runs for unrelated comments can't cancel a review
+    # Job-level, so skipped runs for unrelated comments can't cancel a review.
+    # Per event, so the PR run a `/bot-review` re-runs can't cancel it
     concurrency:
-      group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.event.issue.number }}
+      group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.event.issue.number }}-${{ github.event_name }}
       cancel-in-progress: true
     permissions:
+      actions: write
       contents: read
       pull-requests: read
     steps:
@@ -235,18 +237,34 @@ jobs:
             --model claude-opus-5-5
             --allowedTools "Read,Glob,Grep,WebFetch,WebSearch,mcp__github_inline_comment__create_inline_comment,Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh pr comment:*),Bash(gh release list:*),Bash(gh release view:*)"
 
-      # Fails the check on a ❌ verdict, so Renovate's automerge (which waits
-      # for all checks) holds the PR until the findings are dealt with
+      # The `Claude Review` check on the PR comes from the `pull_request` run:
+      # it fails on a ❌ verdict, so Renovate's automerge (which waits for all
+      # checks) holds the PR. A `/bot-review` run is attached to the default
+      # branch instead, so it re-runs the PR's latest run for the head SHA.
+      # That run finds the review already posted, skips it, and syncs the
+      # check with the latest verdict
       - name: Check Verdict
         env:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ steps.pr.outputs.number }}
+          HEAD_SHA: ${{ steps.pr.outputs.head_sha }}
+          WORKFLOW_REF: ${{ github.workflow_ref }}
         run: |
           set -euo pipefail
           verdict="$(gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --json comments \
             --jq '[.comments[] | select(.author.login == "bykaj-assistant" and (.body | startswith("**Verdict**")))] | last | .body // "" | split("\n")[0]')"
           echo "Latest verdict: ${verdict:-none}"
-          if [[ "$verdict" == *"❌"* ]]; then
+          if [[ "$GITHUB_EVENT_NAME" == "issue_comment" ]]; then
+            workflow_file="$(basename "${WORKFLOW_REF%@*}")"
+            run_id="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow "$workflow_file" \
+              --event pull_request --commit "$HEAD_SHA" --limit 1 --json databaseId --jq '.[0].databaseId // empty')"
+            if [[ -n "$run_id" ]]; then
+              echo "Re-running PR run ${run_id} to sync the check on ${HEAD_SHA}"
+              gh run rerun "$run_id" --repo "$GITHUB_REPOSITORY"
+            else
+              echo "No pull_request run for ${HEAD_SHA}; nothing to sync"
+            fi
+          elif [[ "$verdict" == *"❌"* ]]; then
             echo "::error::Review requires changes before merge"
             exit 1
           fi
