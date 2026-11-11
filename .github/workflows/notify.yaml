@@ -16,6 +16,7 @@ on:
       - Labeler
       - Pull Request
       - Release
+      - Renovate
       - Retry Release
       - Stale
       - Vulnerability Scan
