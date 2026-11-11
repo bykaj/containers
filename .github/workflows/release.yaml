@@ -4,30 +4,43 @@ name: Release
 
 on:
   push:
-    branches: ["main"]
-    paths: ["apps/**"]
+    branches:
+      - main
+    paths:
+      - apps/**
+      - "!apps/**/*_test.go"
   workflow_dispatch:
     inputs:
       app:
         type: string
-        description: Application Name
+        description: App Name
         required: true
       release:
         type: boolean
         description: Release
         required: false
         default: false
+      no-cache:
+        type: boolean
+        description: No Cache
+        required: false
+        default: false
+
+permissions:
+  contents: read
 
 jobs:
   prepare:
     name: Prepare
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: read
     outputs:
       changed-files: ${{ steps.changed-files.outputs.changed_files }}
     steps:
       - name: Get Changed Files
-        id: changed-files
         uses: bjw-s-labs/action-changed-files@147be9638332cf68fd60714a610509d7a9360d60 # v0.7.0
+        id: changed-files
         with:
           path: apps
           include_only_directories: true
@@ -35,9 +48,12 @@ jobs:
 
   changed:
     if: ${{ needs.prepare.outputs.changed-files != '[]' || github.event_name == 'workflow_dispatch' }}
-    needs: ["prepare"]
     name: Get Changed Apps
-    runs-on: ubuntu-latest
+    needs:
+      - prepare
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: read
     outputs:
       apps: ${{ steps.apps.outputs.apps }}
     steps:
@@ -56,16 +72,19 @@ jobs:
 
   build:
     if: ${{ needs.changed.outputs.apps != '[]' }}
-    needs: ["changed"]
     name: Build ${{ matrix.app }}
-    uses: ./.github/workflows/app-builder.yaml
+    needs:
+      - changed
+    uses: $/.github/workflows/app-builder.yaml
     permissions:
+      artifact-metadata: write
       attestations: write
       contents: write
       id-token: write
       packages: write
       security-events: write
-    secrets: inherit
+    secrets:
+      OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
     strategy:
       matrix:
         app: ${{ fromJSON(needs.changed.outputs.apps) }}
@@ -73,18 +92,26 @@ jobs:
       max-parallel: 4
     with:
       app: ${{ matrix.app }}
+      no-cache: ${{ github.event_name == 'workflow_dispatch' && inputs.no-cache }}
       release: ${{ github.event_name == 'workflow_dispatch' && inputs.release || github.event_name == 'push' }}
 
   status:
     if: ${{ !cancelled() }}
-    needs: ["build"]
     name: Build Success
-    runs-on: ubuntu-latest
+    needs:
+      - build
+    runs-on: ubuntu-26.04
+    permissions: {}
     steps:
+      # cancelled counts as failed: !cancelled() above still runs this job when
+      # individual needs were cancelled but the run was not, and a required job
+      # that never reached a verdict must not clear the merge gate.
       - name: Any jobs failed?
-        if: ${{ contains(needs.*.result, 'failure') }}
-        run: exit 1
+        if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
+        run: |
+          exit 1
 
       - name: All jobs passed or skipped?
-        if: ${{ !(contains(needs.*.result, 'failure')) }}
-        run: echo "All jobs passed or skipped" && echo "${{ toJSON(needs.*.result) }}"
+        if: ${{ !(contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')) }}
+        run: |
+          echo "All jobs passed or skipped" && echo "${{ toJSON(needs.*.result) }}"

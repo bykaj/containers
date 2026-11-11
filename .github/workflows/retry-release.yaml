@@ -3,100 +3,29 @@
 name: Retry Release
 
 on:
-  schedule:
-    - cron: "30 1 * * *"
-  workflow_dispatch:
+  workflow_run:
+    workflows:
+      - Release
+    types:
+      - completed
 
 permissions:
   contents: read
 
 jobs:
-  apps:
-    name: Get App Inventory
-    runs-on: ubuntu-latest
-    outputs:
-      apps: ${{ steps.inventory.outputs.apps }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Get App Inventory
-        uses: ./.github/actions/app-inventory
-        id: inventory
-
   retry:
-    if: ${{ needs.apps.outputs.apps != '[]' }}
+    if: >-
+      github.event.workflow_run.conclusion == 'failure'
+      && github.event.workflow_run.event == 'push'
+      && github.event.workflow_run.run_attempt == 1
     name: Retry Release
-    runs-on: ubuntu-latest
-    needs: ["apps"]
-    strategy:
-      matrix:
-        app: ${{ fromJSON(needs.apps.outputs.apps) }}
-      max-parallel: 4
-      fail-fast: false
+    runs-on: ubuntu-26.04
+    permissions:
+      actions: write
     steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Generate Token
-        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
-        id: app-token
-        with:
-          app-id: ${{ secrets.BOT_APP_ID }}
-          private-key: ${{ secrets.BOT_APP_PRIVATE_KEY }}
-
-      - name: Install Cosign
-        uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
-
-      - name: Install regctl
-        uses: regclient/actions/regctl-installer@dd58ad94f76adb73d8ac1bf75ed25f01545d5b32 # main
-
-      - name: Get Bake Options
-        id: app-options
-        uses: ./.github/actions/app-options
-        with:
-          app: ${{ matrix.app }}
-
-      - name: Get Container Registry Version
-        id: registry
+      - name: Re-run Failed Jobs
         env:
-          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
-        run: |
-          if ! version=$(regctl image inspect ghcr.io/${{ github.repository_owner }}/${{ matrix.app }}:rolling \
-              | jq --raw-output '.config.Labels["org.opencontainers.image.version"]' 2>/dev/null) || [[ -z "${version}" ]];
-          then
-              echo "Failed to get registry version for ${{ matrix.app }}"
-              exit 1
-          fi
-          echo "version=${version}" >> $GITHUB_OUTPUT
-
-      - if: ${{ steps.app-options.outputs.version != steps.registry.outputs.version }}
-        name: Find Pull Request
-        uses: juliangruber/find-pull-request-action@0d2ca757412e2742b5cd5ce4ff56757c65652605 # v1.12.0
-        id: find-pull-request
-        with:
-          github-token: ${{ steps.app-token.outputs.token }}
-          labels: app/${{ matrix.app }}
-          state: open
-
-      - if: ${{ steps.find-pull-request.outputs.number != '' }}
-        name: Retry Release
-        env:
-          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
-        run: | # zizmor: ignore[template-injection]
-          gh workflow run release.yaml \
-              --repo ${{ github.repository }} \
-              -f app=${{ matrix.app }} \
-              -f release=true
-
-          {
-              echo '## Retrying Release'
-              echo
-              echo '| Container Name | Actual Version | Expected Version |'
-              echo '|----------------|------------------|----------------|'
-              echo '| `${{ matrix.app }}` | `${{ steps.registry.outputs.version }}` | `${{ steps.app-options.outputs.version }}` |'
-          } >> $GITHUB_STEP_SUMMARY
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+        run: gh run rerun "$RUN_ID" --repo "$REPO" --failed

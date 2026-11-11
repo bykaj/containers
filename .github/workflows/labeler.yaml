@@ -1,0 +1,77 @@
+---
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
+name: Labeler
+
+on:
+  pull_request_target:
+  push:
+    branches:
+      - main
+    paths:
+      - apps/**
+  schedule:
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  labeler:
+    name: Labeler
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Load Secrets
+        uses: 1password/load-secrets-action@70062d7a876d3eb6334754fa26efd2fbd90c32f2 # v5.0.1 # zizmor: ignore[unpinned-tools]
+        id: load-secrets
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          GITHUB_BOT_APP_CLIENT_ID: op://Automation/github-bot/GITHUB_BOT_APP_CLIENT_ID
+          GITHUB_BOT_APP_PRIVATE_KEY: op://Automation/github-bot/GITHUB_BOT_APP_PRIVATE_KEY
+
+      - name: Generate Token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        id: app-token
+        with:
+          client-id: ${{ steps.load-secrets.outputs.GITHUB_BOT_APP_CLIENT_ID }}
+          private-key: ${{ steps.load-secrets.outputs.GITHUB_BOT_APP_PRIVATE_KEY }}
+          permission-issues: write
+          permission-pull-requests: write
+
+      - name: Setup Mise
+        uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5.2.7
+        with:
+          experimental: true
+          install_args: --locked
+
+      - name: Generate Label Config
+        run: mise run generate-label-config
+
+      # Ensure each app/<name> label exists in the repo. safe-settings owns
+      # the static labels via the org admin repo; here we only reconcile the
+      # dynamic set derived from the apps/ tree. --force makes it idempotent.
+      - name: Ensure dynamic app/* labels exist
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -eu
+          find apps -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | while IFS= read -r app; do
+            gh label create "app/$app" --color "027fa0" --force
+          done
+
+      - name: Labeler
+        if: ${{ github.event_name == 'pull_request_target' }}
+        uses: actions/labeler@bf12e9b00b37c5c0ca2b87b79b2daf7891dbda13 # v7.0.0
+        with:
+          repo-token: ${{ steps.app-token.outputs.token }}
+          configuration-path: .github/labeler.yaml
