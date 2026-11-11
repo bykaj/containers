@@ -9,7 +9,7 @@
 # Tesseract reads its configs (hocr, pdf, txt, ...) and the PDF renderer's
 # font from the tessdata folder too. tessdata_best only symlinks them, so take
 # them from the Tesseract source of the version Paperless-ngx runs (5.5.0)
-FROM docker.io/library/alpine:3.22 AS configs
+FROM docker.io/library/alpine:3.24 AS configs
 ARG TESSERACT_VERSION=5.5.0
 ADD --checksum=sha256:f2fb34ca035b6d087a42875a35a7a5c4155fa9979c6132365b1e5a28ebc3fc11 \
     https://github.com/tesseract-ocr/tesseract/archive/refs/tags/${TESSERACT_VERSION}.tar.gz /tesseract.tar.gz
