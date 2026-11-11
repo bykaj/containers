@@ -10,6 +10,7 @@ on:
   workflow_run:
     workflows:
       - Announce Deprecation
+      - Claude Review
       - CodeQL
       - Deprecate App
       - Go Mod Cache
@@ -29,13 +30,14 @@ permissions:
 jobs:
   notify:
     # Skip:
-    # - PR runs not opened by Renovate: the author sees those failures anyway.
+    # - PR runs not triggered by Renovate (the bot app): the author sees those
+    #   failures anyway.
     # - The first attempt of a push-triggered Release: Retry Release re-runs
     #   it, and a second failure triggers this workflow again.
     if: >-
       github.event.workflow_run.conclusion == 'failure'
-      && (github.event.workflow_run.name != 'Pull Request'
-        || github.event.workflow_run.actor.login == 'renovate[bot]')
+      && (github.event.workflow_run.event != 'pull_request'
+        || github.event.workflow_run.actor.login == 'bykaj-assistant[bot]')
       && !(github.event.workflow_run.name == 'Release'
         && github.event.workflow_run.event == 'push'
         && github.event.workflow_run.run_attempt == 1)
