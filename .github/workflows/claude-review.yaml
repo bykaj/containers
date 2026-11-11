@@ -282,8 +282,11 @@ jobs:
 
   # After a `/bot-review`, re-runs the PR's latest run for the head SHA. That
   # run finds the new verdict (Check Existing Review), skips the review and
-  # sets the check from it. The only job with `actions: write`; it runs no
-  # PR code and no model
+  # sets the check from it. Only for heads whose PR run reviewed (Renovate
+  # pushes, opened/ready PRs): a run skipped by the job `if` (the owner's own
+  # push) is skipped again on re-run, so there is no check to sync and the
+  # owner merges by hand. The only job with `actions: write`; it runs no PR
+  # code and no model
   sync:
     if: ${{ github.event_name == 'issue_comment' && needs.main.result == 'success' }}
     name: Sync PR Check
@@ -303,7 +306,7 @@ jobs:
           [[ "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::Invalid PR head SHA"; exit 1; }
           workflow_file="$(basename "${WORKFLOW_REF%@*}")"
           run_json="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow "$workflow_file" \
-            --event pull_request --commit "$HEAD_SHA" --limit 1 --json databaseId,status --jq '.[0] // empty')"
+            --event pull_request --commit "$HEAD_SHA" --limit 1 --json databaseId,status,conclusion --jq '.[0] // empty')"
           if [[ -z "$run_json" ]]; then
             echo "No pull_request run for ${HEAD_SHA}; nothing to sync"
             exit 0
@@ -313,6 +316,10 @@ jobs:
           # the check from it
           if [[ "$(jq -r '.status' <<< "$run_json")" != "completed" ]]; then
             echo "PR run ${run_id} is still running; it will set the check itself"
+            exit 0
+          fi
+          if [[ "$(jq -r '.conclusion' <<< "$run_json")" == "skipped" ]]; then
+            echo "PR run ${run_id} skipped the review (owner's own push); no check to sync"
             exit 0
           fi
           echo "Re-running PR run ${run_id} to sync the check on ${HEAD_SHA}"
