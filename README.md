@@ -150,9 +150,10 @@ Containers in this repository may be deprecated for the following reasons:
 
 Forking this repository is straightforward. Keep the following in mind:
 
-1. **Renovate Bot**: Set up a GitHub Bot for Renovate by following the instructions [here](https://github.com/renovatebot/github-action).
-2. **Renovate Configuration**: Configuration files are located in the [`.github`](https://github.com/bykaj/containers/tree/main/.github) and [renovate-config](https://github.com/bykaj/renovate-config) repositories.
-3. **Lowercase Naming**: Ensure your GitHub username/organization and repository names are entirely lowercase to comply with GHCR requirements. Rename them or update workflows as needed.
+1. **Renovate Bot**: Renovate runs from [`.github/workflows/renovate.yaml`](https://github.com/bykaj/containers/blob/main/.github/workflows/renovate.yaml) as a GitHub App. Create your own app by following the instructions [here](https://github.com/renovatebot/github-action).
+2. **Renovate Configuration**: [`.renovaterc.json5`](https://github.com/bykaj/containers/blob/main/.renovaterc.json5) extends the shared [home-operations preset](https://github.com/home-operations/.github/blob/main/renovate-config.json) and adds the app-specific rules.
+3. **Secrets**: Workflows load the app credentials, Docker Hub and Pushover tokens from 1Password through a service account (`OP_SERVICE_ACCOUNT_TOKEN`). Replace the `op://` references with your own vault, or with repository secrets.
+4. **Lowercase Naming**: Ensure your GitHub username/organization and repository names are entirely lowercase to comply with GHCR requirements. Rename them or update workflows as needed.
 
 ## Credits
 
