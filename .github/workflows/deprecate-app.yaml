@@ -1,13 +1,13 @@
 ---
 # yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
-name: Deprecate Application
+name: Deprecate App
 
 on:
   workflow_dispatch:
     inputs:
       app:
         type: string
-        description: Application Name
+        description: App Name
         required: true
       reason:
         type: string
@@ -22,9 +22,9 @@ permissions:
   contents: read
 
 jobs:
-  deprecate:
-    name: Deprecate (${{ inputs.app }})
-    runs-on: ubuntu-latest
+  plan:
+    name: Plan (${{ inputs.app }})
+    runs-on: ubuntu-26.04
     outputs:
       pull-number: ${{ steps.pr.outputs.pull-request-number }}
     steps:
@@ -33,16 +33,37 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Load Secrets
+        uses: 1password/load-secrets-action@70062d7a876d3eb6334754fa26efd2fbd90c32f2 # v5.0.1 # zizmor: ignore[unpinned-tools]
+        id: load-secrets
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          GITHUB_BOT_APP_CLIENT_ID: op://Automation/github-bot/GITHUB_BOT_APP_CLIENT_ID
+          GITHUB_BOT_APP_PRIVATE_KEY: op://Automation/github-bot/GITHUB_BOT_APP_PRIVATE_KEY
+
       - name: Generate Token
         uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         id: app-token
         with:
-          app-id: ${{ secrets.BOT_APP_ID }}
-          private-key: ${{ secrets.BOT_APP_PRIVATE_KEY }}
+          client-id: ${{ steps.load-secrets.outputs.GITHUB_BOT_APP_CLIENT_ID }}
+          private-key: ${{ steps.load-secrets.outputs.GITHUB_BOT_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+
+      - name: Validate App Directory
+        env:
+          APP: ${{ inputs.app }}
+        run: |
+          if [[ ! -d "./apps/${APP}" ]]; then
+            echo "::error::App directory './apps/${APP}' does not exist"
+            exit 1
+          fi
 
       - name: Delete App Directory
+        env:
+          APP: ${{ inputs.app }}
         run: |
-          rm -rf ./apps/${{ inputs.app }}
+          rm -rf ./apps/${APP}
 
       - name: Create Pull Request
         uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.1.1
@@ -51,59 +72,61 @@ jobs:
           body: |
             **Reason**: ${{ inputs.reason }}
           branch: deprecate/${{ inputs.app }}
-          commit-message: "feat: deprecate ${{ inputs.app }}"
+          commit-message: "release(${{ inputs.app }})!: deprecate app image"
+          labels: ${{ inputs.release && 'deprecation' || '' }}
           sign-commits: true
           signoff: true
-          title: "feat: deprecate ${{ inputs.app }}"
+          title: "release(${{ inputs.app }})!: deprecate app image"
           token: ${{ steps.app-token.outputs.token }}
 
-  release:
+  merge:
     if: ${{ inputs.release }}
-    name: Release (${{ inputs.app }})
-    needs: ["deprecate"]
-    runs-on: ubuntu-latest
+    name: Merge (${{ inputs.app }})
+    needs:
+      - plan
+    runs-on: ubuntu-26.04
     steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
+      - name: Load Secrets
+        uses: 1password/load-secrets-action@70062d7a876d3eb6334754fa26efd2fbd90c32f2 # v5.0.1 # zizmor: ignore[unpinned-tools]
+        id: load-secrets
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          GITHUB_BOT_APP_CLIENT_ID: op://Automation/github-bot/GITHUB_BOT_APP_CLIENT_ID
+          GITHUB_BOT_APP_PRIVATE_KEY: op://Automation/github-bot/GITHUB_BOT_APP_PRIVATE_KEY
 
       - name: Generate Token
         uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         id: app-token
         with:
-          app-id: ${{ secrets.BOT_APP_ID }}
-          private-key: ${{ secrets.BOT_APP_PRIVATE_KEY }}
+          client-id: ${{ steps.load-secrets.outputs.GITHUB_BOT_APP_CLIENT_ID }}
+          private-key: ${{ steps.load-secrets.outputs.GITHUB_BOT_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
 
       - name: Merge Pull Request
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          PULL_NUMBER: ${{ needs.plan.outputs.pull-number }}
         with:
           github-token: ${{ steps.app-token.outputs.token }}
           script: |
-            await github.rest.pulls.merge({
+            const pull_number = Number(process.env.PULL_NUMBER);
+            const { data: pr } = await github.rest.pulls.get({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              pull_number: ${{ needs.deprecate.outputs.pull-number }},
-              merge_method: 'squash',
+              pull_number,
             });
-
-      - name: Get Release Tag
-        uses: ./.github/actions/release-tag
-        id: release
-        with:
-          token: ${{ steps.app-token.outputs.token }}
-
-      - name: Create Release
-        uses: ncipollo/release-action@339a81892b84b4eeb0f6e744e4574d79d0d9b8dd # v1.21.0
-        with:
-          body: |
-            > [!WARNING]
-            > An application has been deprecated and will no longer receive updates.
-            > After **6 months** from now, its image will be **removed** from our container registry.
-
-            ## 📦 Application
-
-            **Name**: ${{ inputs.app }}
-            **Reason**: ${{ inputs.reason }}
-          tag: ${{ steps.release.outputs.tag }}
-          token: ${{ steps.app-token.outputs.token }}
+            try {
+              await github.graphql(
+                'mutation($id: ID!) { enqueuePullRequest(input: { pullRequestId: $id }) { clientMutationId } }',
+                { id: pr.node_id },
+              );
+              core.info(`Added #${pull_number} to the merge queue`);
+            } catch (error) {
+              // enqueue is rejected while required checks are still running
+              core.info(`Enqueue failed (${error.message}), enabling auto-merge instead`);
+              await github.graphql(
+                'mutation($id: ID!) { enablePullRequestAutoMerge(input: { pullRequestId: $id }) { clientMutationId } }',
+                { id: pr.node_id },
+              );
+            }

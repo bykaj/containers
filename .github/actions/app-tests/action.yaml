@@ -1,35 +1,37 @@
 ---
 # yaml-language-server: $schema=https://json.schemastore.org/github-action.json
-name: Application Tests
-description: Takes an app, container image and token then runs container tests
+name: App Tests
+description: Takes an app and image then runs tests
 
 inputs:
   app:
-    description: Application Name
+    description: App Name
     required: true
   image:
     description: Image
-    required: true
-  token:
-    description: GitHub Token
     required: true
 
 runs:
   using: composite
   steps:
-    - name: Setup Actions Script Path
-      shell: bash
-      run: |
-        echo "${{ github.action_path }}" >> $GITHUB_PATH
+    - name: Setup Mise
+      uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5.2.7
+      with:
+        experimental: true
+        install_args: --locked
 
-    - name: Setup Testing Tools
-      shell: bash
-      env:
-        GITHUB_TOKEN: ${{ inputs.token }}
-      run: |
-        setup.sh "${{ inputs.app }}"
+    - name: Restore Go Modules
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: |
+          ~/.cache/go-build
+          ~/go/pkg/mod
+        key: ${{ runner.os }}-go-${{ hashFiles('go.sum') }}
 
     - name: Run Tests
       shell: bash
+      env:
+        APP: ${{ inputs.app }}
+        TEST_IMAGE: ${{ inputs.image }}
       run: |
-        run.sh "${{ inputs.app }}" "${{ inputs.image }}"
+        go test -v ./apps/${APP}/...

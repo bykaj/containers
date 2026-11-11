@@ -1,4 +1,2 @@
-.bin
-.private
-docker-bake.json
+.cache
 .claude/settings.local.json

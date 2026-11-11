@@ -4,7 +4,7 @@ name: CodeQL
 
 on:
   schedule:
-    - cron: "30 1 * * *"
+    - cron: 30 1 * * *
   workflow_dispatch:
 
 permissions:
@@ -13,12 +13,12 @@ permissions:
 jobs:
   analyze:
     name: Analyze (${{ matrix.language }})
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     permissions:
-      security-events: write
-      packages: read
       actions: read
       contents: read
+      packages: read
+      security-events: write
     strategy:
       fail-fast: false
       matrix:

@@ -1,0 +1,73 @@
+---
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
+name: Notify
+
+# Sends a Pushover notification when a workflow fails, so broken builds don't
+# go unnoticed. Replaces upstream's per-build Discord job and also covers
+# Renovate PRs and the scheduled workflows.
+
+on:
+  workflow_run:
+    workflows:
+      - Announce Deprecation
+      - CodeQL
+      - Deprecate App
+      - Go Mod Cache
+      - Labeler
+      - Pull Request
+      - Release
+      - Retry Release
+      - Stale
+      - Vulnerability Scan
+    types:
+      - completed
+
+permissions:
+  contents: read
+
+jobs:
+  notify:
+    # Skip:
+    # - PR runs not opened by Renovate: the author sees those failures anyway.
+    # - The first attempt of a push-triggered Release: Retry Release re-runs
+    #   it, and a second failure triggers this workflow again.
+    if: >-
+      github.event.workflow_run.conclusion == 'failure'
+      && (github.event.workflow_run.name != 'Pull Request'
+        || github.event.workflow_run.actor.login == 'renovate[bot]')
+      && !(github.event.workflow_run.name == 'Release'
+        && github.event.workflow_run.event == 'push'
+        && github.event.workflow_run.run_attempt == 1)
+    name: Notify
+    runs-on: ubuntu-26.04
+    permissions: {}
+    steps:
+      - name: Load Secrets
+        uses: 1password/load-secrets-action@70062d7a876d3eb6334754fa26efd2fbd90c32f2 # v5.0.1 # zizmor: ignore[unpinned-tools]
+        id: load-secrets
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          PUSHOVER_TOKEN: op://Automation/pushover/PUSHOVER_TOKEN
+          PUSHOVER_USER_KEY: op://Automation/pushover/PUSHOVER_USER_KEY
+
+      - name: Send Pushover Notification
+        env:
+          PUSHOVER_TOKEN: ${{ steps.load-secrets.outputs.PUSHOVER_TOKEN }}
+          PUSHOVER_USER_KEY: ${{ steps.load-secrets.outputs.PUSHOVER_USER_KEY }}
+          REPO: ${{ github.repository }}
+          WORKFLOW: ${{ github.event.workflow_run.name }}
+          TITLE: ${{ github.event.workflow_run.display_title }}
+          BRANCH: ${{ github.event.workflow_run.head_branch }}
+          EVENT: ${{ github.event.workflow_run.event }}
+          ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
+        run: |
+          curl --silent --show-error --fail-with-body \
+            --form-string "token=${PUSHOVER_TOKEN}" \
+            --form-string "user=${PUSHOVER_USER_KEY}" \
+            --form-string "title=${REPO}: ${WORKFLOW} failed" \
+            --form-string "message=${TITLE}
+          Branch: ${BRANCH} (${EVENT}, attempt ${ATTEMPT})" \
+            --form-string "url=${RUN_URL}" \
+            --form-string "url_title=Open workflow run" \
+            https://api.pushover.net/1/messages.json

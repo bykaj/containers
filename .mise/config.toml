@@ -1,0 +1,42 @@
+[settings]
+experimental = true
+
+[tools]
+gh = "2.103.3"
+"github:immanuwell/dockerfile-roast" = "1.7.0"
+go = "1.27.3"
+jq = "1.8.2"
+shellcheck = "0.11.0"
+yq = "4.54.2"
+zizmor = "1.32.0"
+
+[tasks.local-build]
+description = "Build and test an app locally"
+dir = "{{config_root}}/.cache"
+usage = '''
+arg "<app>"
+'''
+run = '''
+rsync -aqIP --delete {{config_root}}/apps/"$usage_app"/ .
+docker buildx bake --no-cache --metadata-file docker-bake.json --set=*.output=type=docker --load
+TEST_IMAGE="$(jq -r '."image-local"."image.name" | sub("^docker.io/library/"; "")' docker-bake.json)" go test -count=1 -v {{config_root}}/apps/"$usage_app"/...
+'''
+
+[tasks.remote-build]
+description = "Trigger a remote build"
+usage = '''
+arg "<app>"
+arg "[release]" help="release flag (default: false)"
+'''
+run = 'gh workflow run release.yaml -f app="$usage_app" -f release="${usage_release:-false}"'
+
+[tasks.generate-label-config]
+hide = true
+run = '''
+find "{{config_root}}/apps" -mindepth 1 -maxdepth 1 -type d -printf "%f\n" | while IFS= read -r app; do
+    yq -i ". += {\"app/$app\": [{\"changed-files\": [{\"any-glob-to-any-file\": [\"apps/$app/**\"]}]}]}" {{config_root}}/.github/labeler.yaml
+done
+'''
+
+[hooks]
+postinstall = ["mkdir -p {{config_root}}/.cache"]
