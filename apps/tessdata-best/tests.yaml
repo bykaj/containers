@@ -1,7 +1,0 @@
----
-schemaVersion: "2.0.0"
-fileExistenceTests:
-  - name: nld.traineddata
-    path: /tessdata/nld.traineddata
-    shouldExist: true
-    permissions: "-r--r--r--"
