@@ -54,15 +54,15 @@ jobs:
     name: Claude Review
     runs-on: ubuntu-26.04
     timeout-minutes: 20
-    # Job-level, so skipped runs for unrelated comments can't cancel a review.
-    # Per event, so the PR run a `/bot-review` re-runs can't cancel it
+    # Job-level, so skipped runs for unrelated comments can't cancel a review
     concurrency:
-      group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.event.issue.number }}-${{ github.event_name }}
+      group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.event.issue.number }}
       cancel-in-progress: true
     permissions:
-      actions: write
       contents: read
       pull-requests: read
+    outputs:
+      head-sha: ${{ steps.pr.outputs.head_sha }}
     steps:
       - name: Resolve PR
         id: pr
@@ -88,7 +88,28 @@ jobs:
           fi
           echo "number=${PR_NUMBER}" >> "$GITHUB_OUTPUT"
 
+      # A PR run whose head commit already has a newer verdict (a re-run from
+      # the sync job below, or a reopened PR) only syncs the check: no
+      # secrets, no checkout, no Claude
+      - name: Check Existing Review
+        id: existing
+        if: ${{ github.event_name == 'pull_request' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ steps.pr.outputs.number }}
+        run: |
+          set -euo pipefail
+          pr_json="$(gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --json commits,comments)"
+          head_date="$(jq -r '.commits[-1].committedDate' <<< "$pr_json")"
+          verdict_date="$(jq -r '[.comments[] | select(.author.login == "bykaj-assistant" and (.body | startswith("**Verdict**")))] | last | .createdAt // ""' <<< "$pr_json")"
+          echo "Head commit: ${head_date}, latest verdict: ${verdict_date:-none}"
+          if [[ -n "$verdict_date" && "$verdict_date" > "$head_date" ]]; then
+            echo "Head commit already reviewed; syncing the check only"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Load Secrets
+        if: ${{ steps.existing.outputs.skip != 'true' }}
         id: load-secrets
         uses: 1password/load-secrets-action@70062d7a876d3eb6334754fa26efd2fbd90c32f2 # v5.0.1 # zizmor: ignore[unpinned-tools]
         env:
@@ -98,6 +119,7 @@ jobs:
           CLAUDE_CODE_OAUTH_TOKEN: op://Automation/claude-review/CLAUDE_CODE_OAUTH_TOKEN
 
       - name: Generate Token
+        if: ${{ steps.existing.outputs.skip != 'true' }}
         uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         id: app-token
         with:
@@ -107,6 +129,7 @@ jobs:
           permission-pull-requests: write
 
       - name: Checkout
+        if: ${{ steps.existing.outputs.skip != 'true' }}
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # Empty for pull_request runs, which keep the default merge ref
@@ -114,6 +137,7 @@ jobs:
           persist-credentials: false
 
       - name: Run Claude
+        if: ${{ steps.existing.outputs.skip != 'true' }}
         uses: anthropics/claude-code-action@61a9c274fa7110a66dfafc1bbbced03833eb25fe # v1.0.269
         with:
           claude_code_oauth_token: ${{ steps.load-secrets.outputs.CLAUDE_CODE_OAUTH_TOKEN }}
@@ -240,31 +264,56 @@ jobs:
       # The `Claude Review` check on the PR comes from the `pull_request` run:
       # it fails on a ❌ verdict, so Renovate's automerge (which waits for all
       # checks) holds the PR. A `/bot-review` run is attached to the default
-      # branch instead, so it re-runs the PR's latest run for the head SHA.
-      # That run finds the review already posted, skips it, and syncs the
-      # check with the latest verdict
+      # branch instead; the sync job below brings its verdict to the PR
       - name: Check Verdict
+        if: ${{ github.event_name == 'pull_request' }}
         env:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ steps.pr.outputs.number }}
-          HEAD_SHA: ${{ steps.pr.outputs.head_sha }}
-          WORKFLOW_REF: ${{ github.workflow_ref }}
         run: |
           set -euo pipefail
           verdict="$(gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --json comments \
             --jq '[.comments[] | select(.author.login == "bykaj-assistant" and (.body | startswith("**Verdict**")))] | last | .body // "" | split("\n")[0]')"
           echo "Latest verdict: ${verdict:-none}"
-          if [[ "$GITHUB_EVENT_NAME" == "issue_comment" ]]; then
-            workflow_file="$(basename "${WORKFLOW_REF%@*}")"
-            run_id="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow "$workflow_file" \
-              --event pull_request --commit "$HEAD_SHA" --limit 1 --json databaseId --jq '.[0].databaseId // empty')"
-            if [[ -n "$run_id" ]]; then
-              echo "Re-running PR run ${run_id} to sync the check on ${HEAD_SHA}"
-              gh run rerun "$run_id" --repo "$GITHUB_REPOSITORY"
-            else
-              echo "No pull_request run for ${HEAD_SHA}; nothing to sync"
-            fi
-          elif [[ "$verdict" == *"❌"* ]]; then
+          if [[ "$verdict" == *"❌"* ]]; then
             echo "::error::Review requires changes before merge"
             exit 1
           fi
+
+  # After a `/bot-review`, re-runs the PR's latest run for the head SHA. That
+  # run finds the new verdict (Check Existing Review), skips the review and
+  # sets the check from it. The only job with `actions: write`; it runs no
+  # PR code and no model
+  sync:
+    if: ${{ github.event_name == 'issue_comment' && needs.main.result == 'success' }}
+    name: Sync PR Check
+    needs:
+      - main
+    runs-on: ubuntu-26.04
+    permissions:
+      actions: write
+    steps:
+      - name: Re-run PR Run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ needs.main.outputs.head-sha }}
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+        run: |
+          set -euo pipefail
+          [[ "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::Invalid PR head SHA"; exit 1; }
+          workflow_file="$(basename "${WORKFLOW_REF%@*}")"
+          run_json="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow "$workflow_file" \
+            --event pull_request --commit "$HEAD_SHA" --limit 1 --json databaseId,status --jq '.[0] // empty')"
+          if [[ -z "$run_json" ]]; then
+            echo "No pull_request run for ${HEAD_SHA}; nothing to sync"
+            exit 0
+          fi
+          run_id="$(jq -r '.databaseId' <<< "$run_json")"
+          # A run still in progress posts the newest verdict itself and sets
+          # the check from it
+          if [[ "$(jq -r '.status' <<< "$run_json")" != "completed" ]]; then
+            echo "PR run ${run_id} is still running; it will set the check itself"
+            exit 0
+          fi
+          echo "Re-running PR run ${run_id} to sync the check on ${HEAD_SHA}"
+          gh run rerun "$run_id" --repo "$GITHUB_REPOSITORY"
