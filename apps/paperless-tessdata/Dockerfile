@@ -1,14 +1,14 @@
 # syntax=docker/dockerfile:1
 
-# Data-only image: a complete Tesseract tessdata folder with the most accurate
-# ("best") trained models, meant to be mounted as a Kubernetes image volume
-# over an app's tessdata directory (subPath tessdata). It has no shell and
-# runs nothing. The checksums pin each file; a VERSION bump needs new sha256s
+# Data-only image for Paperless-ngx: a complete Tesseract tessdata folder with
+# the most accurate ("best") trained models, mounted as a Kubernetes image
+# volume over Paperless's tessdata directory (subPath tessdata). It has no
+# shell and runs nothing. The checksums pin each file; a VERSION bump needs
+# new sha256s. See README.md
 
 # Tesseract reads its configs (hocr, pdf, txt, ...) and the PDF renderer's
 # font from the tessdata folder too. tessdata_best only symlinks them, so take
-# them from the Tesseract source of the version the consuming app runs
-# (Paperless-ngx: Tesseract 5.5.0)
+# them from the Tesseract source of the version Paperless-ngx runs (5.5.0)
 FROM docker.io/library/alpine:3.22 AS configs
 ARG TESSERACT_VERSION=5.5.0
 ADD --checksum=sha256:f2fb34ca035b6d087a42875a35a7a5c4155fa9979c6132365b1e5a28ebc3fc11 \

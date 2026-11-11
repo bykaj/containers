@@ -1,7 +1,7 @@
 target "docker-metadata-action" {}
 
 variable "APP" {
-  default = "tessdata-best"
+  default = "paperless-tessdata"
 }
 
 variable "VERSION" {
