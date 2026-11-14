@@ -27,7 +27,7 @@ RUN \
     && \
     pip install uv \
     && uv pip install \
-        radicale==$VERSION \
+        "radicale[oauth2,rabbitmq]==$VERSION" \
         passlib[bcrypt] \
     && pip uninstall --yes uv \
     && rm -rf \
